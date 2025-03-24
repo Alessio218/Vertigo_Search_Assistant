@@ -1,7 +1,7 @@
 import chainlit as cl
 from openai import OpenAI
 from config import Config
-from prompts import query_writer_instructions, summarizer_instructions
+from prompts import query_writer_instructions, summarizer_instructions, reflect_instructions
 from tavily import TavilyClient
 
 import json
@@ -60,8 +60,9 @@ def web_research(search_query):
     }
     
 def summarize_sources(web_research_results, research_topic, running_summary = None):
-    current_result = web_research_results[-1]
+    current_result = "\n".join(web_research_results)
         
+
     if running_summary:
         message =( 
             f"Estendi questo riassunto: {running_summary}\n\n"
@@ -79,6 +80,13 @@ def summarize_sources(web_research_results, research_topic, running_summary = No
         
 ### Interagire con il tuo modello
 
+def reflect_on_summary(research_topic, running_summary):
+    result = llm(reflect_instructions.format(research_topic=research_topic), 
+    f"Identifica una lacuna basandoti e genera una domanda per la prossima ricerca basandoti su: {running_summary}")
+    return json.loads(result)
+
+
+
 
 @cl.on_message
 async def main(message: cl.Message):
@@ -90,17 +98,32 @@ async def main(message: cl.Message):
     
     running_summary = None
 
+    max_cycles = 4
 
-    # Messaggio dell'utente
-    results = web_research(query)
-    await cl.Message(author="system_assistant", content=f"Questi sono i risultati migliori che ho trovato:\n {query}.\n Mi sono soffermato su: {aspect}.\n per quanto riguarda: {reason}").send()
-    # Fase 2 Riassunto
-    summary = llm(
-        summarizer_instructions,
-        f"Riassumi i risultati ottenuti: {results['web_research_results']}",
-        0.2, None
-        )
-    print(f"Riassumi i risultati ottenuti: {results['web_research_results']}")
-    summary = summarize_sources(results['web_research_results'], query, running_summary)
+    while True:
+        # Messaggio dell'utente
+        results = web_research(query)
+        titles = "\n".join(results['source_gathered'])
+        await cl.Message(author="system_assistant", content=f"Questi sono i risultati migliori che ho trovato:\n {titles}").send()
+        
+        summary = summarize_sources(results['web_research_results'], query, running_summary)
 
-    await cl.Message(author="system_assistant", content=f"Riassunto: {summary}").send()
+        running_summary = summary
+
+        await cl.Message(author="system_assistant", content=f"Riassunto: {summary}").send()
+        
+        max_cycles -= 1
+        
+        if max_cycles <= 0:
+            break
+
+        ros = reflect_on_summary(query, summary)
+
+        query = ros.get("domanda_approfondimento", f"Dimmi di più su {query}")
+
+        lacuna_conoscenza = ros.get("lacuna_conoscenza", "")
+
+        #Feedback utente
+        await cl.Message(author="system_assistant", content=f"Prossima ricerca:\n {query}.\n Mi sono soffermato su questo perchè:\n {lacuna_conoscenza}").send()
+
+    await cl.Message(author="system_assistant", content=f"Risposta alla tua domanda:\n \n {message.content}\n \n Conclusione: \n \n {running_summary}").send()

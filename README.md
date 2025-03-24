@@ -31,6 +31,22 @@ poetry install
 
 ### Avvio
 
+
+Se esistente:
+# lanciamo il venv
+source /c/Users/<nome_utente>/AppData/Local/pypoetry/Cache/virtualenvs/<nome_progetto>-<hash>/Scripts/activate
+
+
+# lanciamo l'assistente
+cd <nome_progetto>
+
+poetry install
+eval $(poetry env activate)
+ 
+chainlit run <nome_progetto>/__init__.py -w
+
+
+
 ```bash
 chainlit run < nome_progetto >
 ```
